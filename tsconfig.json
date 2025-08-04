@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Node16",
+    "moduleResolution": "node16",
+    "baseUrl": ".",
+    "paths": {
+  "~/*": ["./src/*"],
+  "@/*": ["./src/*"]
+  },
+    "types": ["@types/node", "nuxt"],
+    "allowJs": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "**/*.ts",
+    "types/**/*.d.ts",
+    "**/*.d.ts",
+    "**/*.vue"
+  ],
+  "exclude": [
+    "node_modules",
+    ".nuxt",
+    "dist"
+  ]
+}
