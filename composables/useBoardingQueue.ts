@@ -1,6 +1,4 @@
-import { ref, computed, reactive, readonly, onMounted, onUnmounted } from 'vue'
-import { supabase } from '../utils/supabase'
-import type { RealtimeChannel } from '@supabase/supabase-js'
+import { ref, computed, onMounted, onUnmounted, readonly } from 'vue'
 
 export interface Passenger {
   id: string
@@ -27,16 +25,14 @@ export interface SeatAssignment {
   passengerName: string
 }
 
+// Fallback composable for local development without database
 export const useBoardingQueue = (vehicleId: string) => {
   const passengers = ref<Passenger[]>([])
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   const seatAssignments = ref<SeatAssignment[]>([])
   
-  // Supabase real-time subscription
-  let realtimeChannel: RealtimeChannel | null = null
-  
-  // Generate available seats (customize based on your vehicle)
+  // Generate available seats (customize based on vehicle)
   const totalSeats = ref<string[]>([
     '1A', '1B', '1C', '1D',
     '2A', '2B', '2C', '2D',
@@ -82,43 +78,6 @@ export const useBoardingQueue = (vehicleId: string) => {
     return groups
   })
 
-  // Load passengers from database
-  const loadPassengers = async () => {
-    try {
-      isLoading.value = true
-      error.value = null
-
-      const { data, error: supabaseError } = await supabase
-        .from('passenger_queue')
-        .select('*')
-        .eq('vehicle_id', vehicleId)
-        .order('arrival_time', { ascending: true })
-
-      if (supabaseError) throw supabaseError
-
-      // Convert database records to Passenger objects
-      passengers.value = (data || []).map((record: any) => ({
-        id: record.id,
-        name: record.passenger_name,
-        type: record.passenger_type,
-        arrivalTime: new Date(record.arrival_time),
-        seatPreference: record.seat_preference,
-        status: record.status,
-        vehicleId: record.vehicle_id,
-        queuePosition: record.queue_position,
-        boardingTime: record.boarding_time ? new Date(record.boarding_time) : undefined
-      }))
-
-      // Update seat assignments
-      updateSeatAssignments()
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Failed to load passengers'
-      console.error('Error loading passengers:', err)
-    } finally {
-      isLoading.value = false
-    }
-  }
-
   // Update seat assignments based on current passengers
   const updateSeatAssignments = () => {
     seatAssignments.value = passengers.value
@@ -128,27 +87,6 @@ export const useBoardingQueue = (vehicleId: string) => {
         passengerId: p.id,
         passengerName: p.name
       }))
-  }
-
-  // Set up real-time subscription
-  const setupRealtimeSubscription = () => {
-    realtimeChannel = supabase
-      .channel(`passenger_queue:vehicle_id=eq.${vehicleId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'passenger_queue',
-          filter: `vehicle_id=eq.${vehicleId}`
-        },
-        (payload: any) => {
-          console.log('Real-time update:', payload)
-          // Reload passengers when changes occur
-          loadPassengers()
-        }
-      )
-      .subscribe()
   }
 
   const addPassenger = async (passengerData: NewPassengerData): Promise<Passenger | null> => {
@@ -170,40 +108,23 @@ export const useBoardingQueue = (vehicleId: string) => {
         throw new Error('Selected seat is not available')
       }
 
-      // Calculate queue position
-      const currentPosition = passengers.value.filter(p => p.status === 'waiting').length + 1
-
-      // Insert into database
-      const { data, error: supabaseError } = await supabase
-        .from('passenger_queue')
-        .insert({
-          vehicle_id: vehicleId,
-          passenger_name: passengerData.name.trim(),
-          passenger_type: passengerData.type,
-          seat_preference: passengerData.seatPreference,
-          queue_position: currentPosition,
-          status: 'waiting'
-        })
-        .select()
-        .single()
-
-      if (supabaseError) throw supabaseError
-
-      // Convert to Passenger object
       const newPassenger: Passenger = {
-        id: data.id,
-        name: data.passenger_name,
-        type: data.passenger_type,
-        arrivalTime: new Date(data.arrival_time),
-        seatPreference: data.seat_preference,
-        status: data.status,
-        vehicleId: data.vehicle_id,
-        queuePosition: data.queue_position
+        id: `passenger_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        name: passengerData.name.trim(),
+        type: passengerData.type,
+        arrivalTime: new Date(),
+        seatPreference: passengerData.seatPreference,
+        status: 'waiting',
+        vehicleId,
+        queuePosition: passengers.value.filter(p => p.status === 'waiting').length + 1
       }
 
+      passengers.value.push(newPassenger)
+      
       // If passenger has seat preference and it's available, assign it
       if (passengerData.seatPreference && availableSeats.value.includes(passengerData.seatPreference)) {
-        await assignSeat(newPassenger.id, passengerData.seatPreference)
+        newPassenger.assignedSeat = passengerData.seatPreference
+        updateSeatAssignments()
       }
 
       return newPassenger
@@ -212,22 +133,6 @@ export const useBoardingQueue = (vehicleId: string) => {
       return null
     } finally {
       isLoading.value = false
-    }
-  }
-
-  const assignSeat = async (passengerId: string, seatId: string) => {
-    const { error: supabaseError } = await supabase
-      .from('passenger_queue')
-      .update({ seat_preference: seatId })
-      .eq('id', passengerId)
-
-    if (supabaseError) throw supabaseError
-
-    // Update local state
-    const passenger = passengers.value.find(p => p.id === passengerId)
-    if (passenger) {
-      passenger.assignedSeat = seatId
-      updateSeatAssignments()
     }
   }
 
@@ -242,30 +147,17 @@ export const useBoardingQueue = (vehicleId: string) => {
       }
 
       // If passenger doesn't have an assigned seat, assign one
-      let assignedSeat = passenger.assignedSeat
-      if (!assignedSeat) {
+      if (!passenger.assignedSeat) {
         const availableSeat = availableSeats.value[0]
         if (!availableSeat) {
           throw new Error('No available seats')
         }
-        assignedSeat = availableSeat
+        
+        passenger.assignedSeat = availableSeat
       }
 
-      // Update passenger status in database
-      const { error: supabaseError } = await supabase
-        .from('passenger_queue')
-        .update({ 
-          status: 'boarded',
-          boarding_time: new Date().toISOString(),
-          seat_preference: assignedSeat
-        })
-        .eq('id', passenger.id)
-
-      if (supabaseError) throw supabaseError
-
-      // Update local state
+      // Update passenger status
       passenger.status = 'boarded'
-      passenger.assignedSeat = assignedSeat
       passenger.boardingTime = new Date()
       
       updateSeatAssignments()
@@ -284,20 +176,14 @@ export const useBoardingQueue = (vehicleId: string) => {
       isLoading.value = true
       error.value = null
 
-      // Remove from database
-      const { error: supabaseError } = await supabase
-        .from('passenger_queue')
-        .delete()
-        .eq('id', passengerId)
-
-      if (supabaseError) throw supabaseError
-
-      // Remove from local state
       const passengerIndex = passengers.value.findIndex(p => p.id === passengerId)
-      if (passengerIndex !== -1) {
-        passengers.value.splice(passengerIndex, 1)
-        updateSeatAssignments()
+      if (passengerIndex === -1) {
+        throw new Error('Passenger not found')
       }
+
+      // Remove passenger from queue
+      passengers.value.splice(passengerIndex, 1)
+      updateSeatAssignments()
       
       return true
     } catch (err) {
@@ -317,14 +203,6 @@ export const useBoardingQueue = (vehicleId: string) => {
       isLoading.value = true
       error.value = null
 
-      // Remove all passengers for this vehicle from database
-      const { error: supabaseError } = await supabase
-        .from('passenger_queue')
-        .delete()
-        .eq('vehicle_id', vehicleId)
-
-      if (supabaseError) throw supabaseError
-
       // Clear local state
       passengers.value = []
       seatAssignments.value = []
@@ -335,17 +213,10 @@ export const useBoardingQueue = (vehicleId: string) => {
     }
   }
 
-  // Lifecycle hooks
-  onMounted(() => {
-    loadPassengers()
-    setupRealtimeSubscription()
-  })
-
-  onUnmounted(() => {
-    if (realtimeChannel) {
-      supabase.removeChannel(realtimeChannel)
-    }
-  })
+  const loadPassengers = async () => {
+    // Fallback version, don't  load from database
+    // Passengers are managed in local state
+  }
 
   return {
     // State

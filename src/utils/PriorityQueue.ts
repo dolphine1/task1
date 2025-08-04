@@ -4,9 +4,9 @@ export interface PassengerPriority {
   id: string
   name: string
   type: PassengerType
-  seatNumber?: string
-  timestamp: Date
-  priority: number
+  arrivalTime: Date
+  seatPreference?: string
+  boardingTime?: Date
 }
 
 export class PriorityQueue<T> {
@@ -86,13 +86,18 @@ export class PriorityQueue<T> {
 
 // Passenger priority comparator (lower number = higher priority)
 export const passengerComparator = (a: PassengerPriority, b: PassengerPriority): number => {
+  // Define priority levels: VIP (1), Elderly (2), Regular (3), Standby (4)
+  const priorityOrder = { vip: 1, elderly: 2, regular: 3, standby: 4 }
+  const aPriority = priorityOrder[a.type]
+  const bPriority = priorityOrder[b.type]
+  
   // First compare by priority level
-  if (a.priority !== b.priority) {
-    return a.priority - b.priority
+  if (aPriority !== bPriority) {
+    return aPriority - bPriority
   }
   
-  // If same priority, compare by timestamp (earlier = higher priority)
-  return a.timestamp.getTime() - b.timestamp.getTime()
+  // If same priority, compare by arrival time (earlier = higher priority)
+  return a.arrivalTime.getTime() - b.arrivalTime.getTime()
 }
 
 // Helper function to create a passenger priority queue
@@ -116,14 +121,13 @@ export const createPassenger = (
   id: string,
   name: string,
   type: PassengerType,
-  seatNumber?: string
+  seatPreference?: string
 ): PassengerPriority => {
   return {
     id,
     name,
     type,
-    seatNumber,
-    timestamp: new Date(),
-    priority: getPriorityLevel(type)
+    arrivalTime: new Date(),
+    seatPreference
   }
 }

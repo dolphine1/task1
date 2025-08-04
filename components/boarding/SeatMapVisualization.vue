@@ -21,13 +21,13 @@
         >
           <!-- Left Seats (A, B) -->
           <div class="flex space-x-1">
-            <SeatButton
+            <BoardingSeatButton
               :seat-number="`${row}A`"
               :status="getSeatStatus(`${row}A`)"
               :passenger="getPassengerForSeat(`${row}A`)"
               @click="handleSeatClick(`${row}A`)"
             />
-            <SeatButton
+            <BoardingSeatButton
               :seat-number="`${row}B`"
               :status="getSeatStatus(`${row}B`)"
               :passenger="getPassengerForSeat(`${row}B`)"
@@ -42,13 +42,13 @@
 
           <!-- Right Seats (C, D) -->
           <div class="flex space-x-1">
-            <SeatButton
+            <BoardingSeatButton
               :seat-number="`${row}C`"
               :status="getSeatStatus(`${row}C`)"
               :passenger="getPassengerForSeat(`${row}C`)"
               @click="handleSeatClick(`${row}C`)"
             />
-            <SeatButton
+            <BoardingSeatButton
               :seat-number="`${row}D`"
               :status="getSeatStatus(`${row}D`)"
               :passenger="getPassengerForSeat(`${row}D`)"
@@ -102,8 +102,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineEmits } from 'vue'
-import SeatButton from './SeatButton.vue'
+import { computed } from 'vue'
 
 // Define the passenger priority type locally
 type PassengerType = 'vip' | 'elderly' | 'regular' | 'standby'
